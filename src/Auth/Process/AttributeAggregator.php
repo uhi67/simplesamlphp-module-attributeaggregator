@@ -1,4 +1,7 @@
 <?php
+
+declare(strict_types=1);
+
 /**
  * Attribute Aggregator Authentication Processing filter
  *
@@ -8,7 +11,20 @@
  * @package simpleSAMLphp
  * @version $Id$
  */
-class sspmod_attributeaggregator_Auth_Process_attributeaggregator extends SimpleSAML_Auth_ProcessingFilter
+
+namespace SimpleSAML\Module\attributeaggregator\Auth\Process;
+
+use SimpleSAML\Assert\Assert;
+use SimpleSAML\Auth\ProcessingFilter;
+use SimpleSAML\Auth\State;
+use SimpleSAML\Error\Exception;
+use SimpleSAML\Logger;
+use SimpleSAML\Module;
+use SimpleSAML\Utils\HTTP;
+use SimpleSAML\Metadata\MetaDataStorageHandler;
+use SAML2\Constants;
+
+class AttributeAggregator extends ProcessingFilter
 {
 
 	/**
@@ -33,24 +49,24 @@ class sspmod_attributeaggregator_Auth_Process_attributeaggregator extends Simple
 	private $required = FALSE;
 
 	/**
-	 * 
+	 *
 	 * nameIdFormat, the format of the attributeId. Default is "urn:oasis:names:tc:SAML:2.0:nameid-format:persistent";
 	 * @var unknown_type
 	 */
-	private $nameIdFormat = SAML2_Const::NAMEID_PERSISTENT;
+	private $nameIdFormat = Constants::NAMEID_PERSISTENT;
 
 
 	/**
 	 * Array of the requested attributes
 	 * @var array
 	 */
-	private $attributes = array();
+	private $attributes = [];
 
 	/**
 	 * nameFormat of attributes. Default is "urn:oasis:names:tc:SAML:2.0:attrname-format:uri"
 	 * @var string
 	 */
-	private $attributeNameFormat = "urn:oasis:names:tc:SAML:2.0:attrname-format:uri";
+	private $attributeNameFormat = Constants::NAMEFORMAT_URI;
 
 	/**
 	 * Initialize attributeaggregator filter
@@ -60,17 +76,17 @@ class sspmod_attributeaggregator_Auth_Process_attributeaggregator extends Simple
 	 * @param array $config   Configuration information
 	 * @param mixed $reserved For future use
 	 */
-	public function __construct($config, $reserved)
+	public function __construct(array $config, $reserved)
 	{
 		assert('is_array($config)');
 		parent::__construct($config, $reserved);
 
-		$metadata = SimpleSAML_Metadata_MetaDataStorageHandler::getMetadataHandler();
+		$metadata = MetaDataStorageHandler::getMetadataHandler();
 
 		if ($config['entityId']) {
 			$aameta = $metadata->getMetaData($config['entityId'], 'attributeauthority-remote');
 			if (!$aameta) {
-				throw new SimpleSAML_Error_Exception(
+				throw new Exception(
                     'attributeaggregator: AA entityId (' . $config['entityId'] .
 					') does not exist in the attributeauthority-remote metadata set.'
 				);
@@ -78,7 +94,7 @@ class sspmod_attributeaggregator_Auth_Process_attributeaggregator extends Simple
 			$this->entityId = $config['entityId'];
 		}
 		else {
-			throw new SimpleSAML_Error_Exception(
+			throw new Exception(
                     'attributeaggregator: AA entityId is not specified in the configuration.'
 				);
 		}
@@ -86,17 +102,16 @@ class sspmod_attributeaggregator_Auth_Process_attributeaggregator extends Simple
 		if (! empty($config["attributeId"])){
 			$this->attributeId = $config["attributeId"];
 		}
-		
+
 		if (! empty($config["required"])){
 			$this->required = $config["required"];
 		}
 
 		if (!empty($config["nameIdFormat"])){
-			foreach (array(
-							SAML2_Const::NAMEID_UNSPECIFIED,
-							SAML2_Const::NAMEID_PERSISTENT,
-							SAML2_Const::NAMEID_TRANSIENT,
-							SAML2_Const::NAMEID_ENCRYPTED) as $format) {
+			foreach ([  Constants::NAMEID_UNSPECIFIED,
+						Constants::NAMEID_PERSISTENT,
+						Constants::NAMEID_TRANSIENT,
+						Constants::NAMEID_ENCRYPTED] as $format) {
 				$invalid = TRUE;
 				if ($config["nameIdFormat"] == $format) {
 					$this->nameIdFormat = $config["nameIdFormat"];
@@ -105,25 +120,25 @@ class sspmod_attributeaggregator_Auth_Process_attributeaggregator extends Simple
 				}
 			}
 			if ($invalid)
-				throw new SimpleSAML_Error_Exception("attributeaggregator: Invalid nameIdFormat: ".$config["nameIdFormat"]);
+				throw new Exception("attributeaggregator: Invalid nameIdFormat: ".$config["nameIdFormat"]);
 		}
 
 		if (!empty($config["attributes"])){
 			if (! is_array($config["attributes"])) {
-				throw new SimpleSAML_Error_Exception("attributeaggregator: Invalid format of attributes array in the configuration");
+				throw new Exception("attributeaggregator: Invalid format of attributes array in the configuration");
 			}
 			foreach ($config["attributes"] as $attribute) {
 				if (! is_array($attribute)) {
-					throw new SimpleSAML_Error_Exception("attributeaggregator: Invalid format of attributes array in the configuration");
+					throw new Exception("attributeaggregator: Invalid format of attributes array in the configuration");
 				}
 				if (array_key_exists("values", $attribute)) {
 					if (! is_array($attribute["values"])) {
-						throw new SimpleSAML_Error_Exception("attributeaggregator: Invalid format of attributes array in the configuration");
-					}	
+						throw new Exception("attributeaggregator: Invalid format of attributes array in the configuration");
+					}
 				}
 				if (array_key_exists('multiSource', $attribute)){
 					if(! preg_match('/^(merge|keep|override)$/', $attribute['multiSource']))
-						throw new SimpleSAML_Error_Exception(
+						throw new Exception(
                     		'attributeaggregator: Invalid multiSource value '.$attribute['multiSource'].' for '.key($attribute).'. It not mached keep, merge or override.'
 					);
 				}
@@ -132,10 +147,9 @@ class sspmod_attributeaggregator_Auth_Process_attributeaggregator extends Simple
 		}
 
 		if (!empty($config["attributeNameFormat"])){
-			foreach (array(
-							SAML2_Const::NAMEFORMAT_UNSPECIFIED,
-							SAML2_Const::NAMEFORMAT_URI,
-							SAML2_Const::NAMEFORMAT_BASIC) as $format) {
+			foreach ([  Constants::NAMEFORMAT_UNSPECIFIED,
+						Constants::NAMEFORMAT_URI,
+						Constants::NAMEFORMAT_BASIC] as $format) {
 				$invalid = TRUE;
 				if ($config["attributeNameFormat"] == $format) {
 					$this->attributeNameFormat = $config["attributeNameFormat"];
@@ -144,7 +158,7 @@ class sspmod_attributeaggregator_Auth_Process_attributeaggregator extends Simple
 				}
 			}
 			if ($invalid)
-				throw new SimpleSAML_Error_Exception("attributeaggregator: Invalid attributeNameFormat: ".$config["attributeNameFormat"], 1);
+				throw new Exception("attributeaggregator: Invalid attributeNameFormat: ".$config["attributeNameFormat"], 1);
 		}
 	}
 
@@ -158,7 +172,7 @@ class sspmod_attributeaggregator_Auth_Process_attributeaggregator extends Simple
 	 *
 	 * @return void
 	 */
-	public function process(&$state)
+	public function process(array &$state): void
 	{
 		assert('is_array($state)');
 		$state['attributeaggregator:authsourceId'] = $state["saml:sp:State"]["saml:sp:AuthId"];
@@ -172,16 +186,17 @@ class sspmod_attributeaggregator_Auth_Process_attributeaggregator extends Simple
 
 		if (! $state['attributeaggregator:attributeId']){
 			if (! $this->required) {
-				SimpleSAML_Logger::info('[attributeaggregator] This user session does not have '.$this->attributeId.', which is required for querying the AA! Continue processing.');
-				SimpleSAML_Logger::debug('[attributeaggregator] Attributes are: '.var_export($state['Attributes'],true));
+				Logger::info('[attributeaggregator] This user session does not have '.$this->attributeId.', which is required for querying the AA! Continue processing.');
+				Logger::debug('[attributeaggregator] Attributes are: '.var_export($state['Attributes'],true));
 				SimpleSAML_Auth_ProcessingChain::resumeProcessing($state);
-			}	
-			throw new SimpleSAML_Error_Exception("This user session does not have ".$this->attributeId.", which is required for querying the AA! Attributes are: ".var_export($state['Attributes'],1));
+			}
+			throw new Exception("This user session does not have ".$this->attributeId.", which is required for querying the AA! Attributes are: ".var_export($state['Attributes'],1));
 		}
-		
-		// Save state and redirect
-		$id  = SimpleSAML_Auth_State::saveState($state, 'attributeaggregator:request');
-		$url = SimpleSAML_Module::getModuleURL('attributeaggregator/attributequery.php');
-		SimpleSAML_Utilities::redirect($url, array('StateId' => $id)); // FIXME: redirect is deprecated
+
+		$url = Module::getModuleURL('attributeaggregator/attributequery.php');
+        $params = ['StateId' => $id];
+
+        $httpUtils = new HTTP();
+        $httpUtils->redirectTrustedURL($url, $params);
 	}
 }
