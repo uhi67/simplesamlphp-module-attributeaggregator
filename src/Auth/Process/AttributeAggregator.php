@@ -20,8 +20,10 @@ use SimpleSAML\Auth\State;
 use SimpleSAML\Error\Exception;
 use SimpleSAML\Logger;
 use SimpleSAML\Module;
+use SimpleSAML\Configuration;
 use SimpleSAML\Utils\HTTP;
-use SimpleSAML\Metadata\MetaDataStorageHandler;
+use SimpleSAML\Metadata\MetaDataStorageSource;
+use SimpleSAML\Metadata\Sources\MDQ;
 use SAML2\Constants;
 
 class AttributeAggregator extends ProcessingFilter
@@ -78,26 +80,41 @@ class AttributeAggregator extends ProcessingFilter
 	 */
 	public function __construct(array $config, $reserved)
 	{
-		assert('is_array($config)');
+		Assert::isArray($config);
 		parent::__construct($config, $reserved);
 
-		$metadata = MetaDataStorageHandler::getMetadataHandler();
-
-		if ($config['entityId']) {
-			$aameta = $metadata->getMetaData($config['entityId'], 'attributeauthority-remote');
-			if (!$aameta) {
-				throw new Exception(
-                    'attributeaggregator: AA entityId (' . $config['entityId'] .
-					') does not exist in the attributeauthority-remote metadata set.'
-				);
-			}
-			$this->entityId = $config['entityId'];
-		}
-		else {
+		if (empty($config['entityId'])) {
 			throw new Exception(
-                    'attributeaggregator: AA entityId is not specified in the configuration.'
-				);
+				'attributeaggregator: AA entityId is not specified in the configuration.'
+			);
 		}
+
+		$aameta = null;
+
+		$globalConfig = Configuration::getInstance();
+		$metadataSources = $globalConfig->getArray('metadata.sources', []);
+
+		foreach ($metadataSources as $source) {
+			try {
+				$mdq = MetaDataStorageSource::getSource($source);
+				$aameta = $mdq->getMetaData($config['entityId'], 'attributeauthority-remote');
+
+				if ($aameta) {
+					break;
+				}
+			} catch (Exception $e) {
+				Logger::warning('Metadata lookup failed:' . $e->getMessage());
+			}
+		}
+
+		if (!$aameta) {
+			throw new Exception(
+				'attributeaggregator: AA entityId (' . $config['entityId'] .
+				') does not exist in any available metadata sources.'
+			);
+		}
+
+		$this->entityId = $config['entityId'];
 
 		if (! empty($config["attributeId"])){
 			$this->attributeId = $config["attributeId"];
@@ -174,7 +191,7 @@ class AttributeAggregator extends ProcessingFilter
 	 */
 	public function process(array &$state): void
 	{
-		assert('is_array($state)');
+		Assert::is_array($state);
 		$state['attributeaggregator:authsourceId'] = $state["saml:sp:State"]["saml:sp:AuthId"];
 		$state['attributeaggregator:entityId'] = $this->entityId;
 
@@ -193,6 +210,7 @@ class AttributeAggregator extends ProcessingFilter
 			throw new Exception("This user session does not have ".$this->attributeId.", which is required for querying the AA! Attributes are: ".var_export($state['Attributes'],1));
 		}
 
+		$id  = State::saveState($state, 'attributeaggregator:request');
 		$url = Module::getModuleURL('attributeaggregator/attributequery.php');
         $params = ['StateId' => $id];
 

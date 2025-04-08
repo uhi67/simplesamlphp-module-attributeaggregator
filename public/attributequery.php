@@ -11,6 +11,7 @@ use SimpleSAML\Error\BadRequest;
 use SimpleSAML\Error\Exception;
 use SimpleSAML\Logger;
 use SimpleSAML\Metadata\MetaDataStorageHandler;
+use SimpleSAML\Metadata\MetaDataStorageSource;
 use SimpleSAML\Module\saml\Message;
 use SimpleSAML\Session;
 use SimpleSAML\Utils\Random;
@@ -21,7 +22,6 @@ use SAML2\XML\saml\NameID;
 
 
 $session = Session::getSessionFromRequest();
-$metadata = MetaDataStorageHandler::getMetadataHandler();
 
 if (!array_key_exists('StateId', $_REQUEST)) {
 	throw new BadRequest(
@@ -32,10 +32,43 @@ if (!array_key_exists('StateId', $_REQUEST)) {
 $id = $_REQUEST['StateId'];
 $state = State::loadState($id, 'attributeaggregator:request');
 Logger::info('[attributeaggregator] - Querying attributes from ' . $state['attributeaggregator:entityId'] );
-$aaMetadata = $metadata->getMetadata($state['attributeaggregator:entityId'],'attributeauthority-remote');
+
+$aaMetadata = null;
+
+$globalConfig = Configuration::getInstance();
+$metadataSources = $globalConfig->getArray('metadata.sources', []);
+
+foreach ($metadataSources as $source) {
+    try {
+        $mdq = MetaDataStorageSource::getSource($source);
+        $aaMetadata = $mdq->getMetaData($state['attributeaggregator:entityId'],'attributeauthority-remote');
+
+        if ($aaMetadata) {
+            if (array_keys($aaMetadata) !== range(0, count($aaMetadata) - 1)) {
+                $aaMetadata = $aaMetadata[0];
+            }
+            break;
+        }
+    } catch (Exception $e) {
+        Logger::warning('Metadata lookup failed:' . $e->getMessage());
+    }
+}
+
+if (!$aaMetadata) {
+    throw new Exception(
+        'attributeaggregator: AA entityId (' . $state['attributeaggregator:entityId'] .
+        ') does not exist in any available metadata sources.'
+    );
+}
+
 
 /* Find an AttributeService with SOAP binding */
 $aas = $aaMetadata['AttributeService'];
+
+if (!is_array($aas)) {
+    throw new Exception("AttributeService is missing or invalid in metadata for entityId: " . var_export($aaMetadata, true));
+}
+
 for ($i=0;$i<count($aas);$i++){
 	if ($aas[$i]['Binding'] == Constants::BINDING_SOAP){
 		$index = $i;
@@ -95,7 +128,7 @@ $attributeNameFormat = $state['attributeaggregator:attributeNameFormat'];
 
 $authsource = Source::getById($state["attributeaggregator:authsourceId"]);
 $src = $authsource->getMetadata();
-$dst = $metadata->getMetaDataConfig($state['attributeaggregator:entityId'],'attributeauthority-remote');
+$dst = Configuration::loadFromArray($aaMetadata, 'attributeauthority-remote' . '/' . var_export($state['attributeaggregator:entityId'], true));
 
 // Sending query
 try {
