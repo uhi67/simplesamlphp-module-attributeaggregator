@@ -191,7 +191,7 @@ class AttributeAggregator extends ProcessingFilter
 	 */
 	public function process(array &$state): void
 	{
-		Assert::is_array($state);
+		Assert::isArray($state);
 		$state['attributeaggregator:authsourceId'] = $state["saml:sp:State"]["saml:sp:AuthId"];
 		$state['attributeaggregator:entityId'] = $this->entityId;
 
