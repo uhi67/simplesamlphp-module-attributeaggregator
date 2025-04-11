@@ -44,7 +44,7 @@ foreach ($metadataSources as $source) {
         $aaMetadata = $mdq->getMetaData($state['attributeaggregator:entityId'],'attributeauthority-remote');
 
         if ($aaMetadata) {
-            if (array_keys($aaMetadata) !== range(0, count($aaMetadata) - 1)) {
+            if (array_keys($aaMetadata) === range(0, count($aaMetadata) - 1)) {
                 $aaMetadata = $aaMetadata[0];
             }
             break;
