@@ -3,13 +3,18 @@
     "description": "Attribute Aggregator implementation or SAML AttributeQuery",
     "type": "simplesamlphp-module",
     "require": {
+        "ext-soap": "*",
         "simplesamlphp/composer-module-installer": "~1.1",
-        "simplesamlphp/saml2": ">=3.0",
-        "ext-soap": "*"
+        "simplesamlphp/saml2": ">=3.0"
     },
     "require-dev": {
         "simplesamlphp/simplesamlphp": ">=1.14",
         "phpunit/phpunit": "~3.7"
+    },
+    "autoload": {
+        "psr-4": {
+            "SimpleSAML\\Module\\attributeaggregator\\": "lib/"
+        }
     },
     "autoload-dev": {
       "files": ["tests/_autoload_modules.php"]
